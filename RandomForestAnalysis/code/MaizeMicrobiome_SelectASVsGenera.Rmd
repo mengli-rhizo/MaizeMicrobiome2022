@@ -24,10 +24,6 @@ library(gplots)
 library(RColorBrewer)
 ```
 
-```{r, set wd, include=FALSE}
-setwd("~/OneDrive - The Pennsylvania State University/Research/Microbiome_Peng/code/")
-```
-
 ```{r, CIMMyT data , include=FALSE}
 micro_env <- read.csv("../data/Microbiome_EnvVars_CleanedImputed.csv") #environmental data 
 micro_lr <- micro_env %>% filter(Germplasm=="Landrace") ##subset for landraces
