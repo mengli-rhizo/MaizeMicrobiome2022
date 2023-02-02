@@ -1,6 +1,6 @@
 ---
 title: "Microbime"
-author: "Chloee McLaughlin"
+author: "Chloee McLaughlin" (GitHub chloee-mclaughlin)
 date: "May 2022"
 output: html_document
 ---
@@ -24,12 +24,8 @@ library(gplots)
 library(RColorBrewer)
 ```
 
-```{r, setwd, include=FALSE}
-setwd("~/OneDrive - The Pennsylvania State University/Research/Microbiome_Peng/code/")
-```
-
 ```{r, load and split data, include=FALSE}
-micro_pc <- read.csv("../data/Peng_microbiome_PC_1-5_scores.csv") #PC loadings for ASV abundance of accessions where each compartment/type/treatment was run separately, PCAs were constructed with only landraces (teosintes excluded)
+micro_pc <- read.csv("../data/Microbiome_PC_1-5_scores.csv") #PC loadings for ASV abundance of accessions where each compartment/type/treatment was run separately, PCAs were constructed with only landraces (teosintes excluded)
 
 micro_env <- read.csv("../data/Microbiome_EnvVars_CleanedImputed.csv") #environmental data of accession point of origin used for model training 
 
@@ -51,7 +47,7 @@ foam_env <- read.csv("../data/FOAM_Env_UsedForMicrobiomeRFPredictions.csv")
 ```
 
 FEATURE SELECTION - Identify environmental descriptors that describe variation in microbiome PCs
-Results from this section can be loaded from the RDS object on line 83
+Results from this section can be loaded from the RDS object on line 79
 
 ```{r, feature selection, echo=FALSE}
 micro_bind <- as.data.frame(na.omit(micro_master)) # 2:81 are "phenotypes" (microbiome PCs) 104:257 are environmental variables 
