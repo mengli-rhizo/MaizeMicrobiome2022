@@ -1,3 +1,6 @@
+#Random Forest Analysis 
+Relating environmental variaiton from accession point of origin to observed ASV abundacne when grown in a common garden 
+
 Microbiome random forest analysis was done for four separate sets of data…
 
 First 5 PCs of full microbiome for every type (bacteria/fungi), compartment (root/rhizosphere), and treatment (CK,D,LN,LP) [microbiomesPCs]
