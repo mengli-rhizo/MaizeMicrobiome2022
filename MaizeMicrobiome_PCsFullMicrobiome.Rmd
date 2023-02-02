@@ -1,0 +1,315 @@
+---
+title: "Microbime"
+author: "Chloee McLaughlin"
+date: "May 2022"
+output: html_document
+---
+This script analyzes PCs of the full landrace microbiome under different nutrient treatments. PCAs were built separately for each compartment/type/treatment (16 in total). Relating microbiome variation to environment of origin.
+```{r, load libraries, include=FALSE}
+library(dplyr)
+library(raster)
+library(tidyr)
+library(Boruta)
+library(randomForest)
+library(purrr)
+library(hydroGOF)
+library(rnaturalearth)
+library(dismo)
+library(sf)
+library(gstat)
+library(rex)
+library(deldir)
+library(readxl)
+library(gplots)
+library(RColorBrewer)
+```
+
+```{r, setwd, include=FALSE}
+setwd("~/OneDrive - The Pennsylvania State University/Research/Microbiome_Peng/code/")
+```
+
+```{r, load and split data, include=FALSE}
+micro_pc <- read.csv("../data/Peng_microbiome_PC_1-5_scores.csv") #PC loadings for ASV abundance of accessions where each compartment/type/treatment was run separately, PCAs were constructed with only landraces (teosintes excluded)
+
+micro_env <- read.csv("../data/Microbiome_EnvVars_CleanedImputed.csv") #environmental data of accession point of origin used for model training 
+
+##make classes to order wide data frame by 
+var1 <- 'biome'
+var2 <- 'pos'
+var3 <- 'trt'
+
+micro_pc_wide <- micro_pc %>% pivot_wider(names_from = c(biome,pos,trt),
+                             values_from = c(PC1,PC2,PC3,PC4,PC5,n_ASV),
+                             names_sep = "_",
+                            names_glue = glue::glue("{[var1]}_{[var2]}_{[var3]}_{.value}", .open = '[', .close = ']'))
+
+##wide data frame with traits (PC loadings for all biome/pos/trt combinations) and home env
+micro_master <- left_join(micro_pc_wide, micro_env, by="Genotype") 
+
+##CIMMyT accessions environmental data predictions will be made for
+foam_env <- read.csv("../data/FOAM_Env_UsedForMicrobiomeRFPredictions.csv")
+```
+
+FEATURE SELECTION - Identify environmental descriptors that describe variation in microbiome PCs
+Results from this section can be loaded from the RDS object on line 83
+
+```{r, feature selection, echo=FALSE}
+micro_bind <- as.data.frame(na.omit(micro_master)) # 2:81 are "phenotypes" (microbiome PCs) 104:257 are environmental variables 
+set.seed(111)
+y=NULL
+
+for (i in (2:81)) {
+    print(names(micro_bind)[i]) #Print name of the env var to be tested 
+    boruta_train <- Boruta(micro_bind[,i] ~., data = micro_bind[,(c(i,104:257))], maxRuns=100, doTrace = 0)
+    boruta_signif <- getSelectedAttributes(boruta_train, withTentative = FALSE) #Get only the important vars
+    tmp <- toString(boruta_signif) #Change significant vars to a string 
+    print(boruta_signif) #Print sig env variables
+    y <- rbind(y, tmp) #make a matrix of important variables 
+    }
+
+micro_boruta <- as.matrix(y) #Rename matrix
+colnames(micro_boruta) <- c("Vars") #Name variables column (stored as a string)
+#micro_boruta <- micro_boruta[grepl(",", micro_boruta), ] #Get rid of all variables that are not env associated 
+micro_boruta <- subset(micro_boruta, grepl(rex(at_least(group(",", anything), 2)), micro_boruta[,1])) #Only include traits w/ more than 2 aspects of environment describing variation
+#micro_boruta <- as.matrix(micro_boruta) #Previous steps affect the matrix
+rownames(micro_boruta) <- gsub(",.*$", "", as.matrix(micro_boruta)) #make variables row names
+
+#saveRDS(micro_boruta, "../output/Boruta_ASVPCs.rds")
+```
+
+LOAD BORUTA OBJECTS MADE IN PREVIOUS SECTION - Shows the select PCs of the microbiome under different treatments that have significant variation related to environmental descriptors 
+
+```{r, feature selection, echo=FALSE}
+micro_boruta <- readRDS("../output/Boruta_ASVPCs.rds")
+```
+
+RANDOM FOREST - Build models that relate environmental variation of accession point of origin to microbiome when grown in a common environment 
+
+```{r, build models, make predicitons, echo=false}
+imp = micro_boruta #feature selection matrix
+training_df = na.omit(micro_master) #training/testing df 
+prediction_df = foam_env #predicted df
+x = NULL #will be filled
+output_table = NULL #will be filled
+
+#pdf("../output/ModelOutputs_microbiomesPCs.pdf")
+#par(mar=c(2,2,2,2))
+#par(oma=c(0,0,0,0))
+#par(mfrow=c(4,4))
+
+for (i in 1:length(imp)) { 
+  set.seed(111)
+  
+  ##Set up the data 
+  boruta_vars <- imp[i,] #store line of string with phene + important vars
+  boruta_vars <- strsplit(x=boruta_vars, ", ") #split the string
+  trait <- rownames(imp)[i,] #store the phenotype in trait
+  phene <- as.data.frame(training_df[,trait]) 
+  rf.data <- training_df[,(boruta_vars[[1]])] #subset matching training data 
+  names(rf.data)[1] <- "target" #for loop
+  
+  ##Splitting data into training and testing  
+  data_set_size = floor(nrow(rf.data)*0.70)
+  index <- sample(1:nrow(rf.data), size=data_set_size)
+  training <- rf.data[index,]
+  testing <- rf.data[-index,]
+  
+  ##Run the model
+  rf <- randomForest(target~., data=training, proximity=TRUE) 
+  
+  ##Scatter plots
+  result <- data.frame(testing$target, predict(rf, testing[-1], type= "response"))
+  xaxis = result[,1]
+  yaxis = result[,2]
+  all = c(xaxis,yaxis)
+  range = c(min(all), max(all))
+  plot(result, main=trait, cex.main=.75, xlab="Testing", ylab="RF Predicted", xlim=range,
+       ylim=range)
+  line <- lm(result[,2] ~ result[,1])
+  abline(line, col="blue")
+  legend("bottomright", bty="n", legend=paste("R2 =", 
+                                            format(summary(line)$r.squared, digits=4)))
+
+  ##Importance plot
+  varImpPlot(rf, main=trait, cex.main=.75)
+
+  ##Automated variable importance table
+  import <- as.data.frame(rf$importance)
+  import <- cbind(trait, var=row.names(import), import)
+  x <- rbind(x,import)
+  
+  ##making a data frame of predicted valued for prediction_df  
+  rf.testing <- prediction_df[names(rf.data[,-c(1)])]
+  prediction_store <- predict(rf, newdata=rf.testing)
+  prediction_df$trait.pred <- prediction_store
+  names(prediction_df)[names(prediction_df) == "trait.pred"] <- paste(trait, '_pred', sep='')
+  
+  #Make the outputs table of model info
+  coef.determination <- summary(line)$r.squared
+  nse <- NSE(result[,1], result[,2])
+  mae <- mae(result[,1], result[,2])
+  mse <- mse(result[,1], result[,2])
+  output_table <- rbind(output_table, c(trait, coef.determination, nse, mae, mse))
+  }
+#dev.off()
+
+output_table <- as.data.frame(output_table)
+names(output_table)[1] <- "trait"
+names(output_table)[2] <- "coef.determ"
+names(output_table)[3] <- "nse"
+names(output_table)[4] <- "mae"
+names(output_table)[5] <- "mse"
+
+#write.csv(output_table, "../output/MicrobimeRFModelOutputs.csv")
+#write.csv(micro_boruta, "../output/SelectedEnvironmentalFeatures.csv")
+
+#microbime_predictions <- prediction_df[,c(1:2,5:6,166:226)]
+#write.csv(microbime_predictions, "../output/FOAMpredictions_ASVPCs.csv")
+```
+
+CORRELATION PLOTS - predictions across "Bacteria Rhizophere" treatments
+
+```{r, predciton corr plots, echo=false}
+PCpred <- read.csv("../output/FOAMpredictions_ASVPCs.csv")
+
+corPC <- cor(PCpred[, c('Bacteria_rhizosphere_CK_PC2_pred','Bacteria_rhizosphere_D_PC2_pred','Bacteria_rhizosphere_LN_PC2_pred','Bacteria_rhizosphere_LP_PC2_pred')])
+
+heatmap(corPC)
+```
+
+PREDCTION MAPS
+
+```{r, prediction maps, echo=false}
+FOAM_ASV <- read.csv("../output/FOAMpredictions_ASVsSUBSET.csv")
+
+micro_pred_spatial <- FOAM_ASV  %>% dplyr::select("Longitude", "Latitude", "ASV37_bacteria_rhizosphere_CK_pred", "ASV37_bacteria_rhizosphere_LN_pred",  "ASV37_bacteria_rhizosphere_LP_pred",  
+"ASV37_bacteria_root_CK_pred",         
+"ASV37_bacteria_root_LN_pred",         
+"ASV37_bacteria_root_LP_pred")
+
+predicted.traits <- c("ASV37_bacteria_rhizosphere_CK_pred", "ASV37_bacteria_rhizosphere_LN_pred",  "ASV37_bacteria_rhizosphere_LP_pred",  
+"ASV37_bacteria_root_CK_pred",         
+"ASV37_bacteria_root_LN_pred",         
+"ASV37_bacteria_root_LP_pred")
+
+predicted.traits <- c("Bacteria_rhizosphere_CK_PC1_pred", "Bacteria_rhizosphere_D_PC1_pred",
+                      "Bacteria_rhizosphere_CK_PC2_pred", "Bacteria_rhizosphere_D_PC2_pred",
+                      "Bacteria_rhizosphere_LN_PC2_pred", "Bacteria_rhizosphere_LP_PC2_pred",
+                      "Fungi_rhizosphere_LP_PC2_pred", "Bacteria_rhizosphere_LN_PC3_pred", 
+                      "Fungi_rhizosphere_LP_PC3_pred", "Bacteria_rhizosphere_LP_PC4_pred",
+                      "Bacteria_rhizosphere_D_PC5_pred")
+   
+
+micro_pred_spatial <- prediction_df %>% dplyr::select("Longitude", "Latitude", 
+                      "Bacteria_rhizosphere_CK_PC1_pred","Bacteria_rhizosphere_D_PC1_pred",
+                      "Bacteria_rhizosphere_CK_PC2_pred", "Bacteria_rhizosphere_D_PC2_pred",
+                      "Bacteria_rhizosphere_LN_PC2_pred", "Bacteria_rhizosphere_LP_PC2_pred",
+                      "Fungi_rhizosphere_LP_PC2_pred", "Bacteria_rhizosphere_LN_PC3_pred", 
+                      "Fungi_rhizosphere_LP_PC3_pred", "Bacteria_rhizosphere_LP_PC4_pred",
+                      "Bacteria_rhizosphere_D_PC5_pred")
+
+##Make spatial objects
+dsp <- SpatialPoints(micro_pred_spatial[,1:2], proj4string=CRS("+proj=longlat +datum=NAD83")) 
+dsp <- SpatialPointsDataFrame(dsp, micro_pred_spatial) 
+mex_sp <- ne_countries(country = "Mexico", returnclass = c("sp")) 
+v <- voronoi(dsp)
+plot(v)
+mex_agg <- aggregate(mex_sp) 
+mex_intersect <- raster::intersect(v, mex_agg) 
+
+for (i in c(predicted.traits)) {
+  spplot(mex_intersect, colnames(micro_pred_spatial[i]), col.regions=rev(get_col_regions()))
+  
+  ras <- raster::raster('../output/SmoothedSpatial/ras.tif') #need a blank ras.tif file, any will work
+  
+  extent_mex <- extent(-120.8167, -86.06667, 14.39336, 30.64336)
+  extent(ras) <- extent_mex
+  
+  ar <- setExtent(ras, extent_mex, keepres=TRUE)
+  
+  df = st_as_sf(micro_pred_spatial, coords = c("Longitude", "Latitude")) %>% st_set_crs(4326)
+  
+  ras_comb = raster::rasterize(mex_intersect, 
+                             raster::raster(mex_intersect, resolution = .05), 
+                             mex_intersect[[i]])
+  
+  gs <- gstat(formula = as.formula(paste(i, "~1")), locations=mex_intersect, nmax=5, set=list(idp = 0))
+  
+  nearest_neighbor <- interpolate(ras_comb, gs)
+  
+  nn_mask <- mask(nearest_neighbor, mex_sp)
+  
+  f <- paste0('raster', i, '.tif')
+  
+  writeRaster(nn_mask, filename=paste0('../output/SmoothedSpatial/', f, overwrite=TRUE))
+}
+
+trait.palette <- c("#F7E3E6", "#EAD5D9", "#DDC8CC", "#D1BBBF",
+                 "#C4ADB2", "#B7A0A5", "#AB9399", "#9E858C",
+                 "#91787F", "#856B72", "#785D65", "#6B5058", "#5F434C")
+
+#pdf("../output/SmoothedSpatial_TopMicrobiomePredictions.pdf")
+#par(mfrow=c(4,3))
+#par(mar=c(2,2,2,2))
+#par(oma=c(0,0,0,0))
+
+for (i in c(predicted.traits)) {
+  
+  raster_pred <- paste0('../output/SmoothedSpatial/raster', i,'.gri')
+  raser_read <- raster(raster_pred)
+  plot(raser_read , asp=1, axes=F, box=F, main=i, cex.main=.8, col=trait.palette) 
+}
+
+#dev.off()
+
+```
+
+HEATMAP PC BACTERIA RHIZOSPEHRE  - Environmental variable importance vs PC2 loadings of "Bacteria Rhizosphere" treatments
+Shows which aspects of environment are relatively important for the Bacteria Rhizosphere model 
+
+```{heatmap}
+#pdf("../output/Heatmaps_TraitvsIMpEnv.pdf")
+
+imp.table.micro <- x %>% filter(grepl('PC2', trait)) %>% 
+  filter(grepl('Bacteria_rhizosphere_', trait)) %>% 
+  pivot_wider(names_from = trait , values_from = IncNodePurity) 
+
+imp.table.micro [is.na(imp.table.micro)] <- 0
+
+imp.table.micro_adj <- imp.table.micro[-1] %>%
+  map_if(is.numeric, ~./sum(.)) %>%
+  as_data_frame()
+
+imp.table.micro_adj <- as.data.frame(imp.table.micro_adj)
+row.names(imp.table.micro_adj) <- imp.table.micro$var
+
+micro.imp<- as.matrix(imp.table.micro_adj)
+heatmap(micro.imp, scale="column", cexRow = .5, cexCol = .5, margins =c(7,7))
+
+#dev.off()
+```
+
+HEATMAP OF ALL RF MODELS R-SQUARED VALUES (observed vs predicted)
+
+```{model heatmap}
+imp.table.micro <-read_excel("../output/MicrobimeRFModelOutputs_microbiomesPCs.xlsx", sheet=2)
+
+imp.table.micro <- as.data.frame(imp.table.micro)
+row.names(imp.table.micro) <- imp.table.micro[,1]
+micro.imp <- as.matrix(imp.table.micro[,-c(1)]
+                       )
+my_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(24)
+coul <- colorRampPalette(brewer.pal(6, "YlOrRd"))(19)
+
+mybreaks <- seq(0, .6, length.out=20)
+par(mar=c(3,3,3,2))
+
+heatmap.2(micro.imp, cexRow = 1, cexCol = .9, Colv = NA, Rowv = NA, margins =c(7,7), col=coul, breaks=mybreaks, tracecol=NA)
+
+legend(x = 1,y= 1, xpd = TRUE, legend("topright",      
+    legend = unique(sampleinf$subtype),
+    col = col.cell,     
+    lty= 1.5,   lwd = 2,           
+    cex=.6))
+
+```

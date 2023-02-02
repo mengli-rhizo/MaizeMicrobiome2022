@@ -1,0 +1,369 @@
+---
+title: "Microbome_SubsetASVs"
+author: "Chloee McLaughlin"
+date: "May 2022"
+output: html_document
+---
+This script analyzes specific ASVs of Massila and Oxalobacteraceae. Relating microbiome variation to environment of origin.
+```{r,load libraries, include=FALSE}
+library(dplyr)
+library(raster)
+library(tidyr)
+library(Boruta)
+library(randomForest)
+library(purrr)
+library(hydroGOF)
+library(rnaturalearth)
+library(dismo)
+library(sf)
+library(gstat)
+library(rex)
+library(deldir)
+library(readxl)
+library(gplots)
+library(RColorBrewer)
+```
+
+```{r, set wd, include=FALSE}
+setwd("~/OneDrive - The Pennsylvania State University/Research/Microbiome_Peng/code/")
+```
+
+```{r, CIMMyT data , include=FALSE}
+micro_env <- read.csv("../data/Microbiome_EnvVars_CleanedImputed.csv") #environmental data 
+micro_lr <- micro_env %>% filter(Germplasm=="Landrace") ##subset for landraces
+
+foam_env <- read.csv("../data/FOAM_Env_UsedForMIcrobiomeRFPredictions.csv") ##CIMMYT FOAM 
+```
+
+Oxalobacteraceae data 
+
+```{r, oxalobacteraceae load and split data, include=FALSE}
+oxalobacteraceae <- read.csv("../data/Oxalobacteraceae.csv")
+
+oxa_wide <- oxalobacteraceae %>% pivot_wider(names_from = c(biome, pos, trt),
+                             values_from = Oxalobacteraceae)
+
+oxa_master <- left_join(oxa_wide, micro_lr, by="Genotype") 
+```
+
+Massilia data
+
+```{r, massilia load and split data, include=FALSE}
+massilia <- read.csv("../data/Massilia.csv")
+
+mas_wide <- massilia %>% pivot_wider(names_from = c(biome, pos, trt),
+                             values_from = Massilia)
+
+mas_master <- left_join(mas_wide, micro_lr, by="Genotype") 
+```
+
+Subsetted ASVs of each compartment/type/treatment
+
+```{r, ASV load and split data, include=FALSE}
+asv_rhiz_CK <- read_xlsx("../data/BLUEs_Bacteria_ASVs_rhizosphere.xlsx", sheet = 1)
+asv_rhiz_CK$biome <- "bacteria"
+asv_rhiz_CK$pos <- "rhizosphere"
+asv_rhiz_CK$trt <-"CK"
+
+asv_rhiz_D <- read_xlsx("../data/BLUEs_Bacteria_ASVs_rhizosphere.xlsx", sheet = 2)
+asv_rhiz_D$biome <- "bacteria"
+asv_rhiz_D$pos <- "rhizosphere"
+asv_rhiz_D$trt <-"D"
+
+asv_rhiz_LN <- read_xlsx("../data/BLUEs_Bacteria_ASVs_rhizosphere.xlsx", sheet = 3)
+asv_rhiz_LN$biome <- "bacteria"
+asv_rhiz_LN$pos <- "rhizosphere"
+asv_rhiz_LN$trt <-"LN"
+
+asv_rhiz_LP <- read_xlsx("../data/BLUEs_Bacteria_ASVs_rhizosphere.xlsx", sheet = 4) 
+asv_rhiz_LP$biome <- "bacteria"
+asv_rhiz_LP$pos <- "rhizosphere"
+asv_rhiz_LP$trt <-"LP"
+
+asv_root_CK <- read_xlsx("../data/BLUEs_Bacteria_ASVs_root.xlsx", sheet = 1)
+asv_root_CK$biome <- "bacteria"
+asv_root_CK$pos <- "root"
+asv_root_CK$trt <-"CK"
+
+asv_root_D <- read_xlsx("../data/BLUEs_Bacteria_ASVs_root.xlsx", sheet = 2)
+asv_root_D$biome <- "bacteria"
+asv_root_D$pos <- "root"
+asv_root_D$trt <-"D"
+
+asv_root_LN <- read_xlsx("../data/BLUEs_Bacteria_ASVs_root.xlsx", sheet = 3)
+asv_root_LN$biome <- "bacteria"
+asv_root_LN$pos <- "root"
+asv_root_LN$trt <-"LN"
+
+asv_root_LP <- read_xlsx("../data/BLUEs_Bacteria_ASVs_root.xlsx", sheet = 4)
+asv_root_LP$biome <- "bacteria"
+asv_root_LP$pos <- "root"
+asv_root_LP$trt <-"LP"
+
+asv_all <- bind_rows(asv_rhiz_CK,asv_rhiz_D,asv_rhiz_LN,asv_rhiz_LP,asv_root_CK,asv_root_D,asv_root_LN,asv_root_LP)
+
+asv_sub <- asv_all %>% dplyr::select(Genotype, biome, pos, trt, ASV10, ASV111, ASV1751, ASV18, ASV37, 
+                              ASV49, ASV51, ASV56, ASV7, ASV79, ASV824)
+
+asv_wide <- asv_sub %>% pivot_wider(names_from = c(biome,pos,trt),
+                             values_from = c(ASV10, ASV111, ASV1751, ASV18, ASV37, 
+                              ASV49, ASV51, ASV56, ASV7, ASV79, ASV824))
+```
+
+PCA for subsetted ASVs by treatment to see if increases signal as combined vs individual ASVs
+
+```{r, Combined select column, echo=FALSE}
+#asv_rhiz_CK
+asv_rhiz_CK.pca <- asv_rhiz_CK %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$rhiz_CK.PC1 <-asv_rhiz_CK.pca[["x"]][,1]
+asv_wide$rhiz_CK.PC2 <-asv_rhiz_CK.pca[["x"]][,2]
+
+#asv_rhiz_D
+asv_rhiz_D.pca <- asv_rhiz_D %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$rhiz_D.PC1 <-asv_rhiz_D.pca[["x"]][,1]
+asv_wide$rhiz_D.PC2 <-asv_rhiz_D.pca[["x"]][,2]
+
+##asv_rhiz_LN
+asv_rhiz_LN.pca <- asv_rhiz_LN %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$rhiz_LN.PC1 <-asv_rhiz_LN.pca[["x"]][,1]
+asv_wide$rhiz_LN.PC2 <-asv_rhiz_LN.pca[["x"]][,2]
+
+##asv_rhiz_LP
+asv_rhiz_LP.pca <- asv_rhiz_LP %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$rhiz_LP.PC1 <-asv_rhiz_LP.pca[["x"]][,1]
+asv_wide$rhiz_LP.PC2 <-asv_rhiz_LP.pca[["x"]][,2]
+
+#asv_root_CK
+asv_root_CK.pca <- asv_root_CK %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$root_CK.PC1 <-asv_root_CK.pca[["x"]][,1]
+asv_wide$root_CK.PC2 <-asv_root_CK.pca[["x"]][,2]
+
+#asv_root_D
+asv_root_D.pca <- asv_root_D %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$root_D.PC1 <-asv_root_D.pca[["x"]][,1]
+asv_wide$root_D.PC2 <-asv_root_D.pca[["x"]][,2]
+
+#asv_root_LP
+asv_root_LP.pca <- asv_root_LP %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$root_LP.PC1 <-asv_root_LP.pca[["x"]][,1]
+asv_wide$root_LP.PC2 <-asv_root_LP.pca[["x"]][,2]
+
+#asv_root_LN
+asv_root_LN.pca <- asv_root_LN %>% 
+  dplyr::select(Genotype, ASV10, ASV111, ASV1751, ASV18, ASV37, ASV49, ASV51, ASV56, ASV7, ASV79, ASV824) %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  prcomp(scale=TRUE)
+
+asv_wide$root_LN.PC1 <-asv_root_LN.pca[["x"]][,1]
+asv_wide$root_LN.PC2 <-asv_root_LN.pca[["x"]][,2]
+```
+
+Combine phenotypic/env data
+
+```{r, ASV df, echo=FALSE}
+asv_master <- left_join(asv_wide, micro_lr, by="Genotype")
+```
+
+FEATURE SELECTION - Identify environmental descriptors that describe variation in all massilia and oxalobacteraceae ASV abundance
+The results for these feature selection sections can also be loaded by reading in the RDS objects on lines 253-255
+
+```{r, feature selection, echo=FALSE}
+micro_bind <- as.data.frame(na.omit(mas_master)) #switch micro_bind to oxa_master to get oxalobacteraceae values
+#micro_bind <- as.data.frame(na.omit(oxa_master)) 
+set.seed(111)
+y=NULL
+
+for (i in (2:9)) {
+    print(names(micro_bind)[i]) #Print name of the env var to be tested 
+    boruta_train <- Boruta(micro_bind[,i] ~., data = micro_bind[,(c(i,16:169))], maxRuns=100,doTrace = 0) 
+    boruta_signif <- getSelectedAttributes(boruta_train, withTentative = FALSE) #Get only the important vars
+    tmp <- toString(boruta_signif) #Change significant vars to a string 
+    print(boruta_signif) #Print sig env variables
+    y <- rbind(y, tmp) #make a matrix of important variables 
+    }
+
+micro_boruta <- as.matrix(y) #Rename matrix
+colnames(micro_boruta) <- c("Vars") #Name variables column (stored as a string)
+micro_boruta <- subset(micro_boruta, grepl(rex(at_least(group(",", anything), 2)), micro_boruta[,1])) #Only include traits w/ more than 2 aspects of environment describing variation
+rownames(micro_boruta) <- gsub(",.*$", "", as.matrix(micro_boruta)) #make variables row names
+
+mas_boruta <- micro_boruta
+#oxa_boruta <- micro_boruta
+```
+
+FEATURE SELCTION - Subsetted ASVs of importance individually (ASV#) and combined (PCs of focal ASVs)
+
+```{r, feature selection, echo=FALSE}
+micro_bind <- as.data.frame(na.omit(asv_master))
+set.seed(111)
+y=NULL
+
+for (i in (2:105)) {
+    print(names(micro_bind)[i]) #Print name of the env var to be tested 
+    boruta_train <- Boruta(micro_bind[,i] ~., data = micro_bind[,(c(i,112:265))], maxRuns=100,doTrace = 0) 
+    boruta_signif <- getSelectedAttributes(boruta_train, withTentative = FALSE) #Get only the important vars
+    tmp <- toString(boruta_signif) #Change significant vars to a string 
+    print(boruta_signif) #Print sig env variables
+    y <- rbind(y, tmp) #make a matrix of important variables 
+    }
+
+micro_boruta <- as.matrix(y) #Rename matrix
+colnames(micro_boruta) <- c("Vars") #Name variables column (stored as a string)
+micro_boruta <- subset(micro_boruta, grepl(rex(at_least(group(",", anything), 2)), micro_boruta[,1])) #Only include traits w/ more than 2 aspects of environment describing variation
+rownames(micro_boruta) <- gsub(",.*$", "", as.matrix(micro_boruta)) #make variables row names
+
+asv_boruta <- micro_boruta
+```
+
+LOAD BORUTA OBJECTS MADE IN PREVIOUS SECTION - Shows the select ASVs, massilia, and oxalobacteraceae under specific treatments that have relationship to environmental descriptors 
+
+```{r, feature selection loade, echo=FALSE}
+#saveRDS(asv_boruta, "../output/Boruta_ASVsSUBSET.rds")
+#saveRDS(mas_boruta, "../output/Bortua_massilia.rds")
+#saveRDS(oxa_boruta, "../output/Boruta_oxalobacteraceae.rds")
+
+asv_boruta <- readRDS("../output/Boruta_ASVsSUBSET.rds")
+oxa_boruta <- readRDS("../output/Boruta_oxalobacteraceae.rds")
+mas_boruta <- readRDS("../output/Boruta_massilia.rds")
+```
+
+RANDOM FOREST -  Build models, for saving space and automation purposes, I change out "imp" and "training_df" for whichever data frame of interest. All other other items in this section stay constant 
+
+```{r, build models, make predicitons, echo=false}
+##Focal ASVs
+imp = asv_boruta ##feature selection matrix
+training_df = na.omit(asv_master)  ##training/testing df 
+
+##Massilia
+#imp = mas_boruta ##feature selection matrix
+#training_df = na.omit(mas_master) ##training/testing df 
+
+##Oxalobacteraceae
+#imp = oxa_boruta ##feature selection matrix
+#training_df = na.omit(oxa_master )   ##training/testing df 
+
+prediction_df = foam_env ##predicted df
+x = NULL ##will be filled
+output_table = NULL ##will be filled
+
+#pdf("../output/ModelOutputs_ASVsSUBSET.pdf") #i in c(1:32,34:43,45,47:length(imp)) #have to skip columns where values stay close to constant (vary by <.0001), makes regression step difficult
+#pdf("../output/ModelOutputs_oxalobacteraceae.pdf")
+#pdf("../output/ModelOutputs_massilia.pdf")
+#par(mar=c(2,2,2,2))
+#par(oma=c(0,0,0,0))
+#par(mfrow=c(4,4))
+
+for (i in 1:length(imp)) { 
+  set.seed(111) #reproducability
+  
+  ##Set up the data 
+  boruta_vars <- imp[i,] #store line of string with phene + important vars
+  boruta_vars <- strsplit(x=boruta_vars, ", ") #split the string
+  trait <- rownames(imp)[i,] #store the phenotype in trait
+  phene <- as.data.frame(training_df[,trait]) 
+  rf.data <- training_df[,(boruta_vars[[1]])] #subset matching training data 
+  names(rf.data)[1] <- "target" #make RF target
+  
+  ##Splitting data into training and testing  
+  data_set_size = floor(nrow(rf.data)*0.70)
+  index <- sample(1:nrow(rf.data), size=data_set_size)
+  training <- rf.data[index,]
+  testing <- rf.data[-index,]
+  
+  ##Run the model
+  rf <- randomForest(target~., data=training, proximity=TRUE) 
+  
+  ##Scatter plots
+  result <- data.frame(testing$target, predict(rf, testing[-1], type= "response"))
+  xaxis = result[,1]
+  yaxis = result[,2]
+  all = c(xaxis,yaxis)
+  range = c(min(all), max(all))
+  plot(result, main=trait, cex.main=.75, xlab="Testing", ylab="RF Predicted", xlim=range,
+       ylim=range)
+  line <- lm(result[,2] ~ result[,1])
+  abline(line, col="blue")
+  legend("bottomright", bty="n", legend=paste("R2 =", 
+                                        format(summary(line)$r.squared, digits=4)))
+  
+  ##Importance plot
+  varImpPlot(rf, main=trait, cex.main=.75)
+
+  ##Automated importance table
+  import <- as.data.frame(rf$importance)
+  import <- cbind(trait, var=row.names(import), import)
+  x <- rbind(x,import)
+  
+  ##making a data frame of predicted valued for prediction_df  
+  rf.testing <- prediction_df[names(rf.data[,-c(1)])]
+  prediction_store <- predict(rf, newdata=rf.testing)
+  prediction_df$trait.pred <- prediction_store
+  names(prediction_df)[names(prediction_df) == "trait.pred"] <- paste(trait, '_pred', sep='')
+  
+  #Make the outputs table of model info
+  coef.determination <- summary(line)$r.squared
+  nse <- NSE(result[,1], result[,2])
+  mae <- mae(result[,1], result[,2])
+  mse <- mse(result[,1], result[,2])
+  output_table <- rbind(output_table, c(trait, coef.determination, nse, mae, mse))
+  }
+#dev.off()
+
+output_table <- as.data.frame(output_table)
+names(output_table)[1] <- "trait"
+names(output_table)[2] <- "coef.determ"
+names(output_table)[3] <- "nse"
+names(output_table)[4] <- "mae"
+names(output_table)[5] <- "mse"
+
+#write.csv(output_table, "../output/MicrobimeRFModelOutputs_ASVsSUBSET.csv")
+
+#microbime_predictions <- prediction_df[,c(1:2,5:6,166:length(prediction_df))]
+#write.csv(microbime_predictions, "../output/FOAMpredictions_ASVsSUBSET.csv")
+#write.csv(microbime_predictions, "../output/FOAMpredictions_massilia.csv")
+#write.csv(microbime_predictions, "../output/FOAMpredictions_oxalobacteraceae.csv")
+```
+
+Heatmap of model R-squared values
+
+```{r, model heatmap, make predicitons, echo=false}
+imp.table.micro <-read_excel("../output/MicrobimeRFModelOutputs_ASVsSUBSET.xlsx",sheet=2)
+
+imp.table.micro <- as.data.frame(imp.table.micro)
+row.names(imp.table.micro) <- imp.table.micro$trait
+micro.imp <- as.matrix(imp.table.micro[,-c(1)])
+
+my_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(24)
+coul <- colorRampPalette(brewer.pal(6, "YlOrRd"))(19)
+mybreaks <- seq(0, .6, length.out=20)
+
+heatmap.2(micro.imp, cexRow = 1, cexCol = .9, Colv = NA, Rowv = NA, margins =c(7,7), col=coul, breaks=mybreaks, tracecol=NA)
+```
