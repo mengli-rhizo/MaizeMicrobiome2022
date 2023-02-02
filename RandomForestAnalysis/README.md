@@ -1,4 +1,4 @@
-Random Forest Analysis - Relating environmental variaiton from accession point of origin to observed ASV abundacne when grown in a common garden 
+Random Forest Analysis - Relating environmental variaiton from landrace accession point of origin to observed ASV abundacne when grown in a common greenhouse setting
 
 Microbiome random forest analysis was done for four separate sets of data…
 
