@@ -61,3 +61,33 @@ sapply(layers,function(layer){
     manhattan(colm, main = paste(layer,'mexi',sep = '_'), chr="CHR", bp="BP", snp="SNP", p="P",suggestiveline = F, genomewideline = F)
     dev.off()
 })
+
+#--prepare a genotype file for downstream cimmyt GWAS analysis--#
+micro<-microMat[,'SampleID'] 
+names(micro)<-microMat$SampleID
+
+# read genotypic file;genotype for SRN (remove na)
+colms<-lapply(1:10,function(chr){
+      mat<-data.frame(fread(paste('Genotypes/Ch',chr,'Merged.hmp.txt',sep="")))
+      nms<-sapply(mat[,1],function(x) strsplit(x,'.M')[[1]][1])
+      dups<-duplicated(nms)
+      xx<-mat[-which(dups==TRUE),]
+      rownames(xx)<-sapply(xx[,1],function(x) strsplit(x,'.M')[[1]][1])
+      mat<-xx
+      mat<-mat[,-1] 
+      mat<-mat[names(micro),]
+      mono<-apply(mat,MARGIN=2,function(x) length(table(x)))
+      mat<-mat[,-which(mono==1)]
+      mat<-t(as.matrix(mat))
+      mat<-mat*2
+      return(mat)
+})
+
+#save(colms, file = 'cimmyt_genotype_list.Rimage')
+#load('cimmyt_genotype_list.Rimage')
+
+#unlist file
+
+colm<-data.frame(rbind(colms[[1]],colms[[2]],colms[[3]],colms[[4]],colms[[5]],colms[[6]],colms[[7]],colms[[8]],colms[[9]],colms[[10]]))
+
+save(colm, file = 'data/cimmyt_genotype_file.Rimage')
