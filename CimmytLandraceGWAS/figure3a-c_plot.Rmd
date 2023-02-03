@@ -184,7 +184,7 @@ gene_snp_id <- gene_snp$Site
 
 3. LD map using IntAssoPLot
 
-```{ld2}
+```{r ld2}
 library(IntAssoPlot)
 library(genetics)
 
