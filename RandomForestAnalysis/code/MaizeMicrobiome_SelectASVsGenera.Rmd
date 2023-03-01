@@ -252,6 +252,8 @@ mas_boruta <- readRDS("../output/Boruta_massilia.rds")
 ```
 
 RANDOM FOREST -  Build models, for saving space and automation purposes, I change out "imp" and "training_df" for whichever data frame of interest. All other other items in this section stay constant 
+Supp Figure 26
+Supp Figure 27
 
 ```{r, build models, make predicitons, echo=false}
 ##Focal ASVs
@@ -349,6 +351,7 @@ names(output_table)[5] <- "mse"
 ```
 
 Heatmap of model R-squared values
+Supp Figure 25b
 
 ```{r, model heatmap, make predicitons, echo=false}
 imp.table.micro <-read_excel("../output/MicrobimeRFModelOutputs_ASVsSUBSET.xlsx",sheet=2)
