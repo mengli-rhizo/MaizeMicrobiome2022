@@ -80,6 +80,7 @@ micro_boruta <- readRDS("../output/Boruta_ASVPCs.rds")
 ```
 
 RANDOM FOREST - Build models that relate environmental variation of accession point of origin to microbiome when grown in a common environment 
+Supp Figure 24a
 
 ```{r, build models, make predicitons, echo=false}
 imp = micro_boruta #feature selection matrix
@@ -163,7 +164,8 @@ names(output_table)[5] <- "mse"
 #write.csv(microbime_predictions, "../output/FOAMpredictions_ASVPCs.csv")
 ```
 
-CORRELATION PLOTS - predictions across "Bacteria Rhizophere" treatments
+CORRELATION PLOTS - predictions across "Bacteria Rhizophere" treatments 
+Supp Figure 24b
 
 ```{r, predciton corr plots, echo=false}
 PCpred <- read.csv("../output/FOAMpredictions_ASVPCs.csv")
@@ -173,7 +175,8 @@ corPC <- cor(PCpred[, c('Bacteria_rhizosphere_CK_PC2_pred','Bacteria_rhizosphere
 heatmap(corPC)
 ```
 
-PREDCTION MAPS
+PREDCTION MAPS 
+Supp Figure 24a maps
 
 ```{r, prediction maps, echo=false}
 FOAM_ASV <- read.csv("../output/FOAMpredictions_ASVsSUBSET.csv")
