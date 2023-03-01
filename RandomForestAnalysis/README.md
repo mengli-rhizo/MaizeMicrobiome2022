@@ -19,3 +19,5 @@ The output folder has…
 * Boruta objects - Files named “Boruta_X.rds” Boruta (feature selection) identified environmental related microbiome components and the associated environmental descriptors that describe variation
 
 * CIMMyT FOAM predicitons - Files named “FOAMpredictions_X.csv” CIMMYT FOAM predictions for all microbiome components random forest models were built for
+
+* Model outputs - Files names "MicrobimeRFModelOutputs_X.xlsx" Outputs for all models used for heatmaps
